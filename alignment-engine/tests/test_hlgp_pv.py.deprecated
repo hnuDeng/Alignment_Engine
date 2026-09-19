@@ -1,0 +1,358 @@
+"""
+综合测试套件
+功能：测试HLGP-PV系统的所有组件
+"""
+
+import sys
+import numpy as np
+from pathlib import Path
+
+# 添加项目路径
+sys.path.insert(0, str(Path(__file__).parent))
+
+from hlgp_pv.llm_interface import MockLLM, LLMResponse
+from hlgp_pv.task_decomposer import TaskDecomposer, SubTask, TaskDecomposition
+from hlgp_pv.primitive_library import PrimitiveLibrary, MotionPrimitive
+from hlgp_pv.trajectory_generator import TrajectoryGenerator, TrajectoryConfig
+from hlgp_pv.physics_verifier import PhysicsVerifier, VerificationResult
+from hlgp_pv.parameter_optimizer import ParameterOptimizer
+from hlgp_pv.dual_loop_planner import DualLoopPlanner, PlanningResult
+
+
+class TestRunner:
+    """测试运行器"""
+    
+    def __init__(self):
+        self.passed = 0
+        self.failed = 0
+        self.errors = []
+    
+    def assert_equal(self, actual, expected, message=""):
+        if actual == expected:
+            self.passed += 1
+        else:
+            self.failed += 1
+            self.errors.append(f"{message}: expected {expected}, got {actual}")
+    
+    def assert_true(self, condition, message=""):
+        if condition:
+            self.passed += 1
+        else:
+            self.failed += 1
+            self.errors.append(f"{message}: condition is False")
+    
+    def assert_not_none(self, value, message=""):
+        if value is not None:
+            self.passed += 1
+        else:
+            self.failed += 1
+            self.errors.append(f"{message}: value is None")
+    
+    def print_results(self):
+        total = self.passed + self.failed
+        print(f"\n{'='*50}")
+        print(f"测试结果: {self.passed}/{total} 通过")
+        if self.errors:
+            print(f"\n失败的测试:")
+            for error in self.errors:
+                print(f"  - {error}")
+        print(f"{'='*50}")
+        return self.failed == 0
+
+
+def test_llm_interface():
+    """测试LLM接口"""
+    print("\n=== 测试LLM接口 ===")
+    runner = TestRunner()
+    
+    llm = MockLLM()
+    
+    # 测试生成
+    response = llm.generate("Test system prompt", "Test user prompt")
+    runner.assert_true(response.success, "LLM生成成功")
+    runner.assert_not_none(response.content, "LLM返回内容")
+    
+    # 测试JSON解析
+    json_response = llm.generate(
+        "Decompose task into subtasks",
+        "把杯子放到桌子上"
+    )
+    result = llm.parse_json_response(json_response)
+    runner.assert_true(len(result) > 0, "JSON解析成功")
+    
+    runner.print_results()
+    return runner.failed == 0
+
+
+def test_task_decomposer():
+    """测试任务分解器"""
+    print("\n=== 测试任务分解器 ===")
+    runner = TestRunner()
+    
+    llm = MockLLM()
+    decomposer = TaskDecomposer(llm)
+    
+    # 测试pick_and_place分解
+    result = decomposer.decompose("把红色杯子放到桌子上")
+    runner.assert_not_none(result, "分解结果不为空")
+    runner.assert_true(len(result.subtasks) > 0, "有子任务")
+    runner.assert_true(result.decomposition_confidence > 0, "置信度大于0")
+    
+    # 验证子任务结构
+    for st in result.subtasks:
+        runner.assert_true(st.id > 0, "子任务ID有效")
+        runner.assert_not_none(st.name, "子任务有名称")
+        runner.assert_not_none(st.primitive, "子任务有原语")
+    
+    # 测试验证
+    is_valid = decomposer.validate_decomposition(result)
+    runner.assert_true(is_valid, "分解结果有效")
+    
+    runner.print_results()
+    return runner.failed == 0
+
+
+def test_primitive_library():
+    """测试运动原语库"""
+    print("\n=== 测试运动原语库 ===")
+    runner = TestRunner()
+    
+    library = PrimitiveLibrary()
+    
+    # 测试原语列表
+    primitives = library.list_primitives()
+    runner.assert_true(len(primitives) > 0, "有可用原语")
+    runner.assert_true("move_to" in primitives, "包含move_to原语")
+    runner.assert_true("grasp" in primitives, "包含grasp原语")
+    
+    # 测试轨迹生成
+    current_state = np.array([0.0, 0.0, 0.0])
+    params = {"target_position": [0.5, 0.3, 0.2], "speed": 1.0}
+    
+    trajectory = library.generate_trajectory("move_to", params, current_state)
+    runner.assert_not_none(trajectory, "轨迹不为空")
+    runner.assert_equal(trajectory.shape[1], 3, "轨迹维度正确")
+    runner.assert_true(trajectory.shape[0] > 0, "轨迹有时间步")
+    
+    # 测试起始和终止位置
+    runner.assert_true(np.allclose(trajectory[0], current_state, atol=0.1), "起始位置正确")
+    
+    runner.print_results()
+    return runner.failed == 0
+
+
+def test_trajectory_generator():
+    """测试轨迹生成器"""
+    print("\n=== 测试轨迹生成器 ===")
+    runner = TestRunner()
+    
+    generator = TrajectoryGenerator()
+    
+    # 测试线性插值
+    start = np.array([0.0, 0.0, 0.0])
+    end = np.array([1.0, 1.0, 0.5])
+    
+    trajectory = generator._linear_interpolation(start, end, 30)
+    runner.assert_equal(trajectory.shape, (30, 3), "轨迹形状正确")
+    runner.assert_true(np.allclose(trajectory[0], start, atol=0.01), "起始位置正确")
+    runner.assert_true(np.allclose(trajectory[-1], end, atol=0.01), "终止位置正确")
+    
+    # 测试平滑
+    smoothed = generator.smooth_trajectory(trajectory)
+    runner.assert_equal(smoothed.shape, trajectory.shape, "平滑后形状不变")
+    
+    # 测试优化
+    optimized = generator.optimize_trajectory(trajectory, end)
+    runner.assert_equal(optimized.shape, trajectory.shape, "优化后形状不变")
+    
+    runner.print_results()
+    return runner.failed == 0
+
+
+def test_physics_verifier():
+    """测试物理验证器"""
+    print("\n=== 测试物理验证器 ===")
+    runner = TestRunner()
+    
+    verifier = PhysicsVerifier(obstacles=[
+        {"position": [0.5, 0.5, 0.25], "radius": 0.1}
+    ])
+    
+    # 测试安全轨迹
+    safe_trajectory = np.array([
+        [0.0, 0.0, 0.0],
+        [0.2, 0.2, 0.1],
+        [0.4, 0.2, 0.2],
+        [0.8, 0.8, 0.4],
+        [1.0, 1.0, 0.5]
+    ])
+    
+    result = verifier.verify(safe_trajectory)
+    runner.assert_true(result.passed, "安全轨迹通过验证")
+    runner.assert_true(result.collision_free, "无碰撞")
+    runner.assert_true(result.velocity_limits_ok, "速度正常")
+    
+    # 测试不安全轨迹
+    unsafe_trajectory = np.array([
+        [0.0, 0.0, 0.0],
+        [0.5, 0.5, 0.25],  # 穿过障碍物
+        [1.0, 1.0, 0.5]
+    ])
+    
+    result = verifier.verify(unsafe_trajectory)
+    runner.assert_true(not result.passed, "不安全轨迹未通过验证")
+    runner.assert_true(not result.collision_free, "有碰撞")
+    
+    # 测试失败原因
+    reason = verifier.get_failure_reason(result)
+    runner.assert_true(len(reason) > 0, "有失败原因")
+    
+    # 测试修复建议
+    suggestions = verifier.suggest_fix(result, unsafe_trajectory)
+    runner.assert_true(len(suggestions) > 0, "有修复建议")
+    
+    runner.print_results()
+    return runner.failed == 0
+
+
+def test_parameter_optimizer():
+    """测试参数优化器"""
+    print("\n=== 测试参数优化器 ===")
+    runner = TestRunner()
+    
+    optimizer = ParameterOptimizer(learning_rate=0.1, max_iterations=200)
+    
+    # 测试简单优化
+    def simple_objective(params):
+        x = params.get("x", 0)
+        y = params.get("y", 0)
+        return (x - 1)**2 + (y - 2)**2
+    
+    initial_params = {"x": 0.0, "y": 0.0}
+    result = optimizer.optimize(initial_params, simple_objective)
+    
+    runner.assert_true(result.success, "优化成功")
+    runner.assert_true(abs(result.optimized_params["x"] - 1.0) < 0.5, "x接近最优值")
+    runner.assert_true(abs(result.optimized_params["y"] - 2.0) < 0.5, "y接近最优值")
+    runner.assert_true(result.cost < 1.0, "代价足够小")
+    
+    runner.print_results()
+    return runner.failed == 0
+
+
+def test_dual_loop_planner():
+    """测试双循环规划器"""
+    print("\n=== 测试双循环规划器 ===")
+    runner = TestRunner()
+    
+    planner = DualLoopPlanner()
+    
+    # 测试规划
+    current_state = np.array([0.0, 0.0, 0.0])
+    goal_state = np.array([1.0, 1.0, 0.5])
+    obstacles = [{"position": [0.5, 0.5, 0.25], "radius": 0.1}]
+    
+    result = planner.plan(
+        instruction="把红色杯子放到桌子上",
+        scene_description="桌面上有一个红色杯子",
+        current_state=current_state,
+        goal_state=goal_state,
+        obstacles=obstacles
+    )
+    
+    runner.assert_not_none(result, "规划结果不为空")
+    runner.assert_true(result.iterations > 0, "有迭代次数")
+    runner.assert_true(result.total_time > 0, "有规划时间")
+    runner.assert_true(len(result.subtasks) > 0, "有子任务")
+    
+    if result.verification:
+        runner.assert_not_none(result.verification, "有验证结果")
+    
+    runner.print_results()
+    return runner.failed == 0
+
+
+def test_integration():
+    """集成测试"""
+    print("\n=== 集成测试 ===")
+    runner = TestRunner()
+    
+    # 测试完整流程
+    planner = DualLoopPlanner()
+    
+    test_cases = [
+        {
+            "name": "简单移动",
+            "instruction": "移动到位置(1,1,0.5)",
+            "scene": "空场景",
+            "current": np.array([0.0, 0.0, 0.0]),
+            "goal": np.array([1.0, 1.0, 0.5]),
+            "obstacles": []
+        },
+        {
+            "name": "避障移动",
+            "instruction": "移动到位置(1,1,0.5)",
+            "scene": "有障碍物",
+            "current": np.array([0.0, 0.0, 0.0]),
+            "goal": np.array([1.0, 1.0, 0.5]),
+            "obstacles": [{"position": [0.5, 0.5, 0.25], "radius": 0.1}]
+        }
+    ]
+    
+    results = []
+    for test in test_cases:
+        result = planner.plan(
+            instruction=test["instruction"],
+            scene_description=test["scene"],
+            current_state=test["current"],
+            goal_state=test["goal"],
+            obstacles=test["obstacles"]
+        )
+        results.append(result)
+        print(f"  {test['name']}: {'成功' if result.success else '失败'}")
+    
+    # 统计
+    success_count = sum(1 for r in results if r.success)
+    print(f"\n  总体成功率: {success_count}/{len(results)}")
+    
+    runner.print_results()
+    return runner.failed == 0
+
+
+def run_all_tests():
+    """运行所有测试"""
+    print("="*50)
+    print("HLGP-PV 系统测试")
+    print("="*50)
+    
+    test_results = []
+    
+    test_results.append(("LLM接口", test_llm_interface()))
+    test_results.append(("任务分解器", test_task_decomposer()))
+    test_results.append(("运动原语库", test_primitive_library()))
+    test_results.append(("轨迹生成器", test_trajectory_generator()))
+    test_results.append(("物理验证器", test_physics_verifier()))
+    test_results.append(("参数优化器", test_parameter_optimizer()))
+    test_results.append(("双循环规划器", test_dual_loop_planner()))
+    test_results.append(("集成测试", test_integration()))
+    
+    # 汇总
+    print("\n" + "="*50)
+    print("测试汇总")
+    print("="*50)
+    
+    passed = sum(1 for _, result in test_results if result)
+    total = len(test_results)
+    
+    for name, result in test_results:
+        status = "PASS" if result else "FAIL"
+        print(f"  {name}: {status}")
+    
+    print(f"\n总体结果: {passed}/{total} 通过")
+    
+    return passed == total
+
+
+if __name__ == "__main__":
+    success = run_all_tests()
+    sys.exit(0 if success else 1)

@@ -1,0 +1,50 @@
+{
+  "name": "@agent-copilot/fiftyone-plugin",
+  "version": "1.0.0",
+  "description": "FiftyOne interactive drift diagnostics sidebar plugin (Agent_Copilot)",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "jest --config jest.config.js",
+    "test:coverage": "jest --config jest.config.js --coverage"
+  },
+  "fiftyone": {
+    "type": "panel",
+    "name": "Agent_Copilot",
+    "label": "Agent Copilot - Drift Diagnostics",
+    "file": "src/index.ts"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "three": "^0.162.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/jest": "^30.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/three": "^0.162.0",
+    "identity-obj-proxy": "^3.0.0",
+    "jest": "^30.5.1",
+    "jest-environment-jsdom": "^30.5.1",
+    "ts-jest": "^29.4.12",
+    "typescript": "^5.3.0"
+  },
+  "peerDependencies": {
+    "@fiftyone/plugins": ">=0.20.0",
+    "@fiftyone/state": ">=0.20.0"
+  },
+  "peerDependenciesMeta": {
+    "@fiftyone/plugins": {
+      "optional": true
+    },
+    "@fiftyone/state": {
+      "optional": true
+    }
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,52 @@
+
+"""
+调试测试：验证优化器是否真的在工作
+"""
+
+import numpy as np
+import sys
+sys.path.append(".")
+
+from trajectory_optimizer import TrajectoryOptimizer
+
+print("=== 优化器调试测试 ===")
+
+optimizer = TrajectoryOptimizer(horizon=30, state_dim=3)
+
+start = np.array([0.0, 0.0, 0.0])
+goal = np.array([1.0, 1.0, 0.5])
+
+# 测试1：无约束
+print("\n测试1: 无约束优化")
+traj1 = optimizer.solve(start, goal, [])
+print(f"起始: {traj1[0]}")
+print(f"终止: {traj1[-1]}")
+print(f"误差: {np.linalg.norm(traj1[-1] - goal):.4f}")
+
+# 测试2：有避障约束
+print("\n测试2: 有避障约束")
+constraints = [{
+    "name": "obstacle_wall",
+    "params": {
+        "obstacle_pos": np.array([0.5, 0.5, 0.25]),
+        "safety_margin": 0.3
+    }
+}]
+traj2 = optimizer.solve(start, goal, constraints)
+print(f"起始: {traj2[0]}")
+print(f"终止: {traj2[-1]}")
+print(f"误差: {np.linalg.norm(traj2[-1] - goal):.4f}")
+
+# 检查轨迹是否绕过了障碍物
+min_dist = float('inf')
+for state in traj2:
+    dist = np.linalg.norm(state - np.array([0.5, 0.5, 0.25]))
+    min_dist = min(min_dist, dist)
+print(f"最近距离障碍物: {min_dist:.4f}")
+print(f"安全边距: 0.3")
+print(f"避障成功: {min_dist > 0.3}")
+
+# 测试3：比较两条轨迹
+print("\n测试3: 轨迹比较")
+print(f"无约束轨迹平滑度: {np.mean(np.diff(traj1, axis=0)**2):.6f}")
+print(f"有约束轨迹平滑度: {np.mean(np.diff(traj2, axis=0)**2):.6f}")

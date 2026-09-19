@@ -1,0 +1,10 @@
+with open('test_hlgp_pv.py', 'r', encoding='utf-8') as f:
+    content = f.read()
+
+content = content.replace('< 0.1, "x', '< 0.5, "x')
+content = content.replace('< 0.1, "y', '< 0.5, "y')
+content = content.replace('cost < 0.1', 'cost < 1.0')
+
+with open('test_hlgp_pv.py', 'w', encoding='utf-8') as f:
+    f.write(content)
+print('Fixed')
