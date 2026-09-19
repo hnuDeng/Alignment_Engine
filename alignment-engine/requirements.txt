@@ -1,0 +1,14 @@
+numpy
+pydantic
+torch
+websockets
+opentelemetry-api
+opentelemetry-sdk
+pynvml
+ray
+scipy
+scikit-learn
+pytest
+docker
+fiftyone
+transformers
