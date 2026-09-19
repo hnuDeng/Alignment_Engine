@@ -87,7 +87,7 @@ class TestSandboxCgroupManager:
         mock_client.containers.run.return_value = mock_container
         
         # Simulate time passing to trigger timeout
-        mock_time.side_effect = [100.0, 100.1, 101.5, 115.0]
+        mock_time.side_effect = [100.0 + i * 2.0 for i in range(20)]
         
         manager = SandboxCgroupManager()
         manager.client = mock_client

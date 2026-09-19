@@ -248,7 +248,7 @@ class MemoryManager:
         Returns:
             本次操作释放的近似字节数（除以平均张量大小估算卸载张量数）
         """
-        if not self._torch_available:
+        if self.mock_mode:
             # Mock 模式：模拟释放 50% 已分配显存
             freed = self._mock_allocated // 2
             self._mock_allocated -= freed
