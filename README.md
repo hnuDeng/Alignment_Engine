@@ -47,9 +47,9 @@ graph TD
     end
 
     subgraph Backend ["Backend Engine (Python)"]
-        Extractor[Data Extractor] --> Analyzer[O(1) Drift Analyzer]
+        Extractor[Data Extractor] --> Analyzer["O(1) Drift Analyzer"]
         Analyzer --> Trajectory[Vectorized Optimizer]
-        Trajectory --> Security[AST/CGroup Sandbox]
+        Trajectory --> Security["AST/CGroup Sandbox"]
         Security --> Reviewer[Review Pipeline]
     end
     
