@@ -40,13 +40,13 @@ The project consists of two perfectly decoupled subsystems:
 
 ```mermaid
 graph TD
-    subgraph Frontend [Frontend Plugin (TS/WebGL2)]
+    subgraph Frontend ["Frontend Plugin (TS/WebGL2)"]
         UI[React UI] --> Redux[Agent Slice Store]
         Redux --> Raycaster[Octree Raycaster]
         Redux --> WebGL[BufferGeometryManager]
     end
 
-    subgraph Backend [Backend Engine (Python)]
+    subgraph Backend ["Backend Engine (Python)"]
         Extractor[Data Extractor] --> Analyzer[O(1) Drift Analyzer]
         Analyzer --> Trajectory[Vectorized Optimizer]
         Trajectory --> Security[AST/CGroup Sandbox]

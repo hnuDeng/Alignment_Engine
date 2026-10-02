@@ -115,6 +115,10 @@ class MemoryManager:
                 logger.warning("torch 可用但 CUDA 不可用，进入 Mock 模式")
         except ImportError:
             logger.warning("torch 未安装，进入 Mock 模式")
+        except Exception as e:
+            logger.warning(f"CUDA 检测或初始化失败: {e}，回退到 Mock 模式")
+            self._cuda_available = False
+            self.mock_mode = True
 
         if self.mock_mode:
             # Mock 模式：模拟 8GB 显存
@@ -144,12 +148,15 @@ class MemoryManager:
         查询真实 CUDA 显存。
         Returns: (allocated_bytes, reserved_bytes, total_bytes)
         """
-        import torch  # type: ignore[import-untyped]
-        dev = torch.device(f"cuda:{self.device_id}")
-        allocated = torch.cuda.memory_allocated(dev)
-        reserved  = torch.cuda.memory_reserved(dev)
-        total     = torch.cuda.get_device_properties(dev).total_mem
-        return allocated, reserved, total
+        try:
+            import torch  # type: ignore[import-untyped]
+            dev = torch.device(f"cuda:{self.device_id}")
+            allocated = torch.cuda.memory_allocated(dev)
+            reserved  = torch.cuda.memory_reserved(dev)
+            total     = torch.cuda.get_device_properties(dev).total_mem
+            return allocated, reserved, total
+        except Exception:
+            return 0, 0, 1
 
     def _query_mock(self) -> tuple[int, int, int]:
         """Mock 模式下返回模拟值。"""
@@ -267,35 +274,39 @@ class MemoryManager:
             self._offload_log.append(record)
             return 42
 
-        import torch  # type: ignore[import-untyped]
-
-        before_alloc = torch.cuda.memory_allocated(self.device_id)
-
-        # Step 1: 清空 CUDA 缓存
-        torch.cuda.empty_cache()
-
-        # Step 2: 强制垃圾回收
-        gc.collect()
-
-        after_alloc = torch.cuda.memory_allocated(self.device_id)
-        bytes_freed = before_alloc - after_alloc
-
-        logger.warning(
-            "紧急张量卸载完成 | 释放 %.1f MB | %.1f%% → %.1f%%",
-            bytes_freed / 1e6,
-            before_alloc / self._query_cuda()[2] * 100,
-            after_alloc / self._query_cuda()[2] * 100,
-        )
-
-        record = OffloadRecord(
-            timestamp=time.time(),
-            tensors_offloaded=0,  # 精确数需 torch 内部 API
-            bytes_freed=bytes_freed,
-            from_state=MemoryState.EMERGENCY,
-            to_utilization=after_alloc / self._query_cuda()[2],
-        )
-        self._offload_log.append(record)
-        return bytes_freed
+        try:
+            import torch  # type: ignore[import-untyped]
+    
+            before_alloc = torch.cuda.memory_allocated(self.device_id)
+    
+            # Step 1: 清空 CUDA 缓存
+            torch.cuda.empty_cache()
+    
+            # Step 2: 强制垃圾回收
+            gc.collect()
+    
+            after_alloc = torch.cuda.memory_allocated(self.device_id)
+            bytes_freed = before_alloc - after_alloc
+    
+            logger.warning(
+                "紧急张量卸载完成 | 释放 %.1f MB | %.1f%% → %.1f%%",
+                bytes_freed / 1e6,
+                before_alloc / self._query_cuda()[2] * 100,
+                after_alloc / self._query_cuda()[2] * 100,
+            )
+    
+            record = OffloadRecord(
+                timestamp=time.time(),
+                tensors_offloaded=0,  # 精确数需 torch 内部 API
+                bytes_freed=bytes_freed,
+                from_state=MemoryState.EMERGENCY,
+                to_utilization=after_alloc / self._query_cuda()[2],
+            )
+            self._offload_log.append(record)
+            return bytes_freed
+        except Exception as e:
+            logger.error(f"Offload failed: {e}")
+            return 0
 
     # ── Mock 控制接口 ────────────────────────────────────────
 

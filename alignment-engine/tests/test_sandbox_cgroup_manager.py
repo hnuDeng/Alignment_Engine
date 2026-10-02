@@ -79,7 +79,7 @@ class TestSandboxCgroupManager:
         mock_container.remove.assert_called_once_with(force=True)
 
     @patch('core.security.sandbox_cgroup_manager.docker')
-    @patch('time.time')
+    @patch('core.security.sandbox_cgroup_manager.time.time')
     def test_execute_script_timeout(self, mock_time, mock_docker):
         mock_client = MagicMock()
         mock_container = MagicMock()
