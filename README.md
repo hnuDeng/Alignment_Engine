@@ -2,10 +2,9 @@
 
 # 🚀 Alignment Engine
 
-**A High-Performance Multi-Agent Visual Analytics & Alignment Pipeline**
+**A Multi-Agent Visual Analytics & Alignment Pipeline**
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg?style=flat-square)](#)
-[![Coverage](https://img.shields.io/badge/coverage-90%25-success.svg?style=flat-square)](#)
+[![CI](https://github.com/hnuDeng/Alignment_Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/hnuDeng/Alignment_Engine/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg?style=flat-square)](#)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg?style=flat-square)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
@@ -14,7 +13,7 @@
 [Architecture](#-architecture) •
 [Installation](#-installation) •
 [Quick Start](#-quick-start) •
-[Development](#-development)
+[Development](#-development--testing)
 
 </div>
 
@@ -22,21 +21,21 @@
 
 ## 📖 Overview
 
-**Alignment Engine** is an enterprise-grade, highly robust pipeline designed for multi-agent visual analytics and Large Language Model (LLM) alignment data exploration. It tightly integrates a high-performance **Python backend** (handling data extraction, drift analysis, vector optimization, and secure sandboxing) with a lightning-fast **TypeScript/WebGL frontend** (FiftyOne Plugin for rendering millions of data points smoothly).
+**Alignment Engine** is a pipeline for multi-agent visual analytics and Large Language Model (LLM) alignment data exploration. It includes a **Python backend** for data extraction, drift analysis, trajectory optimization, and script review, plus a **TypeScript/WebGL frontend** with React components for a FiftyOne host.
 
-Built with zero-compromise engineering standards: No placeholders, deep defensive programming, enterprise-grade type safety (`pydantic` & strict TS), and fully vectorized high-performance computing (`NumPy`).
+Data contracts use Pydantic, the frontend enables strict TypeScript checks, and numerical routines use NumPy. Some optional integrations provide mock or fallback paths; available behavior depends on the installed dependencies and host environment.
 
 ## ✨ Features
 
-- **🛡️ Extreme Defensive Architecture**: Pydantic-powered `frozen=True` data contracts guarantee pipeline immutability. Built-in CGroup & AST-based code execution sandboxing prevents malicious prompt/code injection.
-- **⚡ O(1) Data Drift Analyzer**: State-of-the-art anomaly detection algorithms heavily optimized via vectorization to perform O(1) single-pass extraction over massive long-tail datasets.
-- **🚀 Fully Vectorized Trajectory Optimizer**: Physics-based multi-agent routing entirely offloaded to pure-C NumPy matrix calculations (Vectorized Finite Difference), eliminating slow Python loops.
-- **🌌 Ultra-Smooth WebGL Rendering**: Custom `BufferGeometryManager` and `Octree` raycasting in the frontend handling millions of high-dimensional embeddings seamlessly at 60 FPS.
-- **🧩 Graceful Degradation & Mocking**: Hardened resilience that seamlessly falls back to local NumPy mocking when `FiftyOne`, `Docker`, or `CUDA` environments are degraded or missing.
+- **🛡️ Typed Data and Script Review**: Pydantic data contracts and AST-based script checks, with separate sandbox and cgroup utilities. Deployment isolation requires the corresponding runtime configuration.
+- **⚡ Vectorized Drift Analysis**: NumPy-based embedding distance and threshold calculations, with a CUDA path when available. Work scales with the number and dimensions of the input embeddings.
+- **🚀 Trajectory Optimization**: NumPy-based finite-difference routines for multi-agent routing.
+- **🌌 WebGL Rendering**: `BufferGeometryManager` and octree raycasting support embedding visualization and point selection. Performance depends on the dataset and hardware.
+- **🧩 Fallback Paths**: Mock sample extraction and NumPy analysis support local use when FiftyOne or CUDA is unavailable.
 
 ## 🏗️ Architecture
 
-The project consists of two perfectly decoupled subsystems:
+The project contains backend and frontend subsystems:
 
 ```mermaid
 graph TD
@@ -47,10 +46,10 @@ graph TD
     end
 
     subgraph Backend ["Backend Engine (Python)"]
-        Extractor[Data Extractor] --> Analyzer["O(1) Drift Analyzer"]
-        Analyzer --> Trajectory[Vectorized Optimizer]
-        Trajectory --> Security["AST/CGroup Sandbox"]
-        Security --> Reviewer[Review Pipeline]
+        Extractor[Data Extractor] --> Analyzer["Drift Analyzer"]
+        Analyzer --> Reviewer["AST Review and Execution"]
+        Trajectory[Trajectory Optimizer]
+        Security[Sandbox and CGroup Utilities]
     end
     
     Frontend <==>|Frozen Data Contracts| Backend
@@ -58,11 +57,11 @@ graph TD
 
 ## 📦 Installation
 
-Ensure you have **Python 3.11+** and **Node.js 18+** installed.
+Ensure you have **Python 3.11+** and **Node.js 24** installed (the versions used by CI). The locked frontend test dependencies require at least Node.js 22.
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/Alignment_Engine.git
+git clone https://github.com/hnuDeng/Alignment_Engine.git
 cd Alignment_Engine
 ```
 
@@ -70,19 +69,21 @@ cd Alignment_Engine
 ```bash
 cd alignment-engine
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
+source venv/bin/activate
+python -m pip install -r requirements.txt
 ```
+
+On Windows PowerShell, activate the environment with `.\venv\Scripts\Activate.ps1` instead of `source`. The requirements include optional integrations such as FiftyOne, Docker, Ray, and Transformers.
 
 ### 3. Setup the Frontend
 ```bash
 cd ../frontend_plugin
-npm install
+npm ci
 ```
 
 ## 🚀 Quick Start
 
-Start the alignment engine pipeline locally:
+Run the following commands from the repository root in separate terminals. The backend entry point runs the analysis pipeline with script execution in dry-run mode:
 
 ```bash
 # Terminal 1: Run the backend analysis pipeline
@@ -91,27 +92,34 @@ python main.py
 ```
 
 ```bash
-# Terminal 2: Start the frontend WebGL FiftyOne plugin
+# Build the frontend component/plugin library
 cd frontend_plugin
-npm run dev
+npm run build
 ```
+
+The frontend build emits JavaScript and type declarations to `frontend_plugin/dist`. Embed the exported `AgentCopilotPanel` in your FiftyOne host; this package does not define a standalone development server.
 
 ## 🧪 Development & Testing
 
-We maintain strict test coverage constraints (>90% for frontend, high coverage for backend algorithms). 
+CI runs backend tests, frontend tests, TypeScript checking, and the frontend build. Coverage must be measured locally; the optional frontend coverage command enforces the thresholds in `frontend_plugin/jest.config.js`.
 
 **Run Backend Tests (Pytest):**
 ```bash
 cd alignment-engine
-pytest --cov=core --cov-report=term
+python -m pip install pytest-cov
+python -m pytest --cov=core --cov-report=term
 ```
 
 **Run Frontend Tests (Jest):**
 ```bash
 cd frontend_plugin
 npm test
+npm run typecheck
+npm run build
 npm run test:coverage
 ```
+
+The concurrent fuzzing test exercises mock reviewer and analyzer implementations; passing it does not verify real sandbox isolation.
 
 ## 🤝 Contributing
 

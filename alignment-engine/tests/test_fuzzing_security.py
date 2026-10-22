@@ -44,12 +44,14 @@ class DataMutator:
     def generate_invalid_tensor() -> torch.Tensor:
         shapes = [
             (0, 10),
-            (10000, 10000, 10000), # OOM
+            (10000, 10000, 10000),
             (1, 2, 3, 4, 5, 6),
             ( -1, 5 )
         ]
         try:
             shape = random.choice(shapes)
+            if shape == (10000, 10000, 10000):
+                return torch.zeros(()).expand(shape)
             # some shapes will throw ValueError immediately, catch and return a weird valid tensor
             return torch.randn(shape)
         except Exception:
@@ -69,11 +71,41 @@ class MockReviewerSandbox:
 
 class MockAnalyzer:
     def infer(self, tensor: torch.Tensor):
-        if torch.isnan(tensor).any() or torch.isinf(tensor).any():
-            raise Exception("Invalid Tensor Math")
         if tensor.numel() > 1e7:
             raise Exception("OOM Prevented")
+        if torch.isnan(tensor).any() or torch.isinf(tensor).any():
+            raise Exception("Invalid Tensor Math")
         time.sleep(0.001)
+
+def test_oversized_tensor_generation_uses_bounded_storage(monkeypatch):
+    original_randn = torch.randn
+
+    def bounded_randn(shape):
+        if any(dimension > 100 for dimension in shape):
+            raise ValueError("Test blocked an oversized allocation")
+        return original_randn(shape)
+
+    monkeypatch.setattr(random, "choice", lambda shapes: shapes[1])
+    monkeypatch.setattr(torch, "randn", bounded_randn)
+
+    tensor = DataMutator.generate_invalid_tensor()
+
+    assert tensor.shape == (10000, 10000, 10000)
+    assert tensor.untyped_storage().nbytes() <= tensor.element_size()
+
+
+def test_oversized_tensor_is_rejected_before_elementwise_validation(monkeypatch):
+    tensor = torch.zeros(()).expand(10000, 10000, 10000)
+
+    def forbidden_scan(tensor):
+        raise AssertionError("Oversized tensor must not be scanned")
+
+    monkeypatch.setattr(torch, "isnan", forbidden_scan)
+    monkeypatch.setattr(torch, "isinf", forbidden_scan)
+
+    with pytest.raises(Exception, match="OOM Prevented"):
+        MockAnalyzer().infer(tensor)
+
 
 def fuzz_reviewer_sandbox(iterations: int = 1000):
     sandbox = MockReviewerSandbox()
