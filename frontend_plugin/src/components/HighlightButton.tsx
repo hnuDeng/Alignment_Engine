@@ -99,7 +99,7 @@ export const HighlightButton: React.FC<HighlightButtonProps> = ({
       style={style}
       onClick={handleClick}
       disabled={sampleIds.length === 0}
-      title={isHighlighted ? "取消高亮" : `高亮 ${sampleIds.length} 个异常样本`}
+      title={isHighlighted ? "取消高亮" : `高亮 ${sampleIds.length} 个待审样本`}
     >
       {isHighlighted ? <EyeOffIcon /> : <EyeIcon />}
       <span>

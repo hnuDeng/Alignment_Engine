@@ -24,6 +24,7 @@ export enum DriftMessageType {
   HEARTBEAT     = "heartbeat",
   UMAP_UPDATE   = "umap_update",
   REVIEW_LOG    = "review_log",
+  ERROR         = "error",
 }
 
 export enum DriftSeverity {
@@ -39,28 +40,30 @@ export enum DriftSeverity {
 
 export interface DriftSample {
   sampleId: string;
-  isolationScore: number;
+  isolationScore: number | null;
   centroidDistance: number;
   reason: string;
-  severity: DriftSeverity;
+  severity: DriftSeverity | null;
 }
 
 export interface DriftReport {
   reportId: string;
   timestamp: string;
-  analysisMode: "cuda" | "numpy" | "cpp_bfs";
+  timestampKind?: "received";
+  analysisMode: string;
+  source?: string;
   samples: DriftSample[];
   stats: {
-    totalSamples: number;
-    meanDistance: number;
-    threshold: number;
+    totalSamples: number | null;
+    meanDistance: number | null;
+    threshold: number | null;
     driftCount: number;
   };
 }
 
 export interface DriftWsMessage {
   type: DriftMessageType;
-  payload: DriftReport | DriftSample[] | UmapSnapshot | ReviewLogEntry | null;
+  payload: DriftReport | DriftSample[] | UmapSnapshot | ReviewLogEntry | { message: string } | null;
   seq: number;
 }
 
@@ -127,6 +130,7 @@ export interface ReviewLogEntry {
 
 export interface AgentCopilotState {
   connectionStatus: WsConnectionStatus;
+  serverError: string | null;
   reports: DriftReport[];
   highlightedSampleIds: Set<string>;
   isStreaming: boolean;
@@ -139,6 +143,7 @@ export interface AgentCopilotState {
 
 export type AgentCopilotAction =
   | { type: "WS_STATUS_CHANGED"; status: WsConnectionStatus }
+  | { type: "SERVER_ERROR"; message: string | null }
   | { type: "REPORT_RECEIVED"; report: DriftReport }
   | { type: "HIGHLIGHT_SAMPLES"; sampleIds: string[] }
   | { type: "CLEAR_HIGHLIGHTS" }
@@ -172,6 +177,7 @@ export interface AgentCopilotPanelProps {
 export interface DriftAlertProps {
   report: DriftReport;
   onHighlight: (sampleIds: string[]) => void;
+  highlightedIds?: Set<string>;
   expanded: boolean;
   onToggleExpand: () => void;
 }

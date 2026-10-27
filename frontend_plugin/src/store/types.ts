@@ -59,6 +59,8 @@ export enum ExecutionMode {
   NUMPY    = "numpy",
   CPP_BFS  = "cpp_bfs",
   MOCK     = "mock",
+  MOCK_NUMPY = "mock_numpy",
+  UNKNOWN  = "unknown",
 }
 
 export enum SeverityLevel {
@@ -77,11 +79,11 @@ export interface NormalizedSample {
   label: string;
   labelId: number;
   embedding: number[] | null;
-  isDrift: boolean;
-  isolationScore: number;
+  isDrift: boolean | null;
+  isolationScore: number | null;
   centroidDistance: number;
   reason: string;
-  severity: DriftSeverity;
+  severity: DriftSeverity | null;
   /** ID of the parent report */
   reportId: string;
   /** Index in the original points array */
@@ -177,10 +179,10 @@ export interface DatasetFilter {
 
 export interface DatasetStats {
   totalSamples: number;
-  driftCount: number;
+  driftCount: number | null;
   labelDistribution: Record<number, number>;
-  meanIsolationScore: number;
-  maxIsolationScore: number;
+  meanIsolationScore: number | null;
+  maxIsolationScore: number | null;
 }
 
 export interface DatasetState {

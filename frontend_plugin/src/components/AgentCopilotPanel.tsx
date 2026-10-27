@@ -148,8 +148,9 @@ export const AgentCopilotPanel: React.FC<AgentCopilotPanelProps> = ({
 
       // 通过 FiftyOne 状态桥接更新主视图
       const newHighlighted = new Set(state.highlightedSampleIds);
+      const remove = sampleIds.every((id) => newHighlighted.has(id));
       for (const id of sampleIds) {
-        if (newHighlighted.has(id)) {
+        if (remove) {
           newHighlighted.delete(id);
         } else {
           newHighlighted.add(id);
@@ -217,6 +218,8 @@ export const AgentCopilotPanel: React.FC<AgentCopilotPanelProps> = ({
         </button>
       </div>
 
+      {state.serverError && <div role="alert" style={{ padding: "8px 12px", color: "#fca5a5" }}>{state.serverError}</div>}
+
       {/* ── 报告列表 ── */}
       <div style={REPORTS_AREA_STYLE}>
         {state.reports.length === 0 ? (
@@ -237,6 +240,7 @@ export const AgentCopilotPanel: React.FC<AgentCopilotPanelProps> = ({
               key={report.reportId}
               report={report}
               onHighlight={handleHighlight}
+              highlightedIds={state.highlightedSampleIds}
               expanded={expandedReports.has(report.reportId)}
               onToggleExpand={() => toggleExpand(report.reportId)}
             />
@@ -247,7 +251,7 @@ export const AgentCopilotPanel: React.FC<AgentCopilotPanelProps> = ({
       {/* ── 底部工具栏 ── */}
       <div style={FOOTER_STYLE}>
         <span>
-          {reportCount} 份报告 · {driftSampleCount} 个异常样本 ·{" "}
+          {reportCount} 份报告 · {driftSampleCount} 个待审样本 ·{" "}
           {state.highlightedSampleIds.size} 个已高亮
         </span>
         <button

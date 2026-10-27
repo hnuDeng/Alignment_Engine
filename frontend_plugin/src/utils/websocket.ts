@@ -13,8 +13,50 @@ import {
   DriftMessageType,
   DriftReport,
   DriftWsMessage,
+  DriftSeverity,
+  ReviewLogEntry,
   WsConnectionStatus,
 } from "../types";
+
+export function parseDriftMessage(raw: unknown): DriftWsMessage | null {
+  try {
+    if (typeof raw !== "string") return null;
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const msg = value as Record<string, unknown>;
+    if (typeof msg.type !== "string" || !Number.isSafeInteger(msg.seq) || (msg.seq as number) < 1) return null;
+    const type = msg.type.toLowerCase() as DriftMessageType;
+    if (!Object.values(DriftMessageType).includes(type)) return null;
+    const finite = (n: unknown) => typeof n === "number" && Number.isFinite(n);
+    const validSample = (s: DriftReport["samples"][number]) => s && typeof s.sampleId === "string" && !!s.sampleId &&
+      finite(s.centroidDistance) && (s.isolationScore === null || finite(s.isolationScore)) &&
+      (s.severity === null || Object.values(DriftSeverity).includes(s.severity)) && typeof s.reason === "string";
+    if (type === DriftMessageType.DRIFT_REPORT) {
+      const p = msg.payload as DriftReport | null;
+      if (!p || typeof p !== "object" || typeof p.reportId !== "string" || !p.reportId ||
+          typeof p.timestamp !== "string" || !Number.isFinite(Date.parse(p.timestamp)) ||
+          typeof p.analysisMode !== "string" || (p.source !== undefined && typeof p.source !== "string") || !Array.isArray(p.samples) || !p.stats ||
+          !finite(p.stats.meanDistance) || !finite(p.stats.threshold) ||
+          !Number.isSafeInteger(p.stats.totalSamples) || (p.stats.totalSamples as number) < p.samples.length ||
+          p.stats.driftCount !== p.samples.length ||
+          !p.samples.every(validSample)) return null;
+    }
+    if (type === DriftMessageType.DRIFT_EVENT && (!Array.isArray(msg.payload) || !msg.payload.every(validSample))) return null;
+    if (type === DriftMessageType.UMAP_UPDATE) {
+      const p = msg.payload as { snapshotId?: unknown; timestamp?: unknown; points?: unknown; labelColorMap?: unknown } | null;
+      if (!p || typeof p.snapshotId !== "string" || typeof p.timestamp !== "string" || !Array.isArray(p.points) || !p.labelColorMap || typeof p.labelColorMap !== "object" ||
+          !p.points.every((point: Record<string, unknown>) => point && typeof point.sampleId === "string" && finite(point.x) && finite(point.y) && finite(point.labelId) && typeof point.label === "string" && typeof point.isDrift === "boolean")) return null;
+    }
+    if (type === DriftMessageType.REVIEW_LOG) {
+      const p = msg.payload as ReviewLogEntry | null;
+      if (!p || typeof p.logId !== "string" || typeof p.reportId !== "string" || typeof p.timestamp !== "string" || typeof p.generatedScript !== "string" || typeof p.astCheckPassed !== "boolean" || !Array.isArray(p.astIssues) || !p.astIssues.every(issue => typeof issue === "string") || typeof p.sandboxSuccess !== "boolean" || typeof p.sandboxLog !== "string" || !finite(p.sandboxTimeMs) || !["pending", "accepted", "rejected"].includes(p.userDecision)) return null;
+    }
+    if (type === DriftMessageType.ERROR && (!msg.payload || typeof msg.payload !== "object" || typeof (msg.payload as { message?: unknown }).message !== "string")) return null;
+    return { ...msg, type } as unknown as DriftWsMessage;
+  } catch {
+    return null;
+  }
+}
 
 /** WebSocket 事件回调接口 */
 export interface DriftWsCallbacks {
@@ -57,6 +99,7 @@ export class DriftWsClient {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private disposed = false;
   private lastSeq = 0;
+  private awaitingHeartbeat = false;
 
   constructor(
     endpoint: string,
@@ -116,27 +159,17 @@ export class DriftWsClient {
 
   private handleOpen(): void {
     this.reconnectAttempt = 0;
+    this.lastSeq = 0;
     this.setStatus("connected");
     this.startHeartbeat();
 
-    // 发送重连同步请求
-    if (this.lastSeq > 0) {
-      this.send({ reconnect_after_seq: this.lastSeq });
-    }
   }
 
   private handleMessage(event: MessageEvent): void {
+    const msg = parseDriftMessage(event.data);
+    if (!msg || msg.seq <= this.lastSeq) return;
+    this.lastSeq = msg.seq;
     this.resetHeartbeat();
-
-    let msg: DriftWsMessage;
-    try {
-      msg = JSON.parse(event.data as string) as DriftWsMessage;
-    } catch {
-      console.warn("[DriftWsClient] Failed to parse message:", event.data);
-      return;
-    }
-
-    this.lastSeq = Math.max(this.lastSeq, msg.seq);
 
     switch (msg.type) {
       case DriftMessageType.DRIFT_REPORT:
@@ -149,12 +182,13 @@ export class DriftWsClient {
           this.callbacks.onReport({
             reportId: `event-${msg.seq}`,
             timestamp: new Date().toISOString(),
-            analysisMode: "cpp_bfs",
+            analysisMode: "unknown",
+            timestampKind: "received",
             samples: msg.payload,
             stats: {
-              totalSamples: msg.payload.length,
-              meanDistance: 0,
-              threshold: 0,
+              totalSamples: null,
+              meanDistance: null,
+              threshold: null,
               driftCount: msg.payload.length,
             },
           });
@@ -163,6 +197,10 @@ export class DriftWsClient {
 
       case DriftMessageType.HEARTBEAT:
         this.callbacks.onHeartbeat();
+        break;
+
+      case DriftMessageType.ERROR:
+        this.callbacks.onError?.(new MessageEvent("error", { data: msg.payload }));
         break;
 
       case DriftMessageType.STREAM_START:
@@ -194,10 +232,11 @@ export class DriftWsClient {
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
+    this.awaitingHeartbeat = false;
     this.heartbeatTimer = setInterval(() => {
-      // 超时未收到服务端心跳 → 视为断线
-      this.ws?.close();
-    }, this.config.heartbeatTimeoutMs);
+      if (this.awaitingHeartbeat) this.ws?.close();
+      else { this.awaitingHeartbeat = true; this.send({ type: "heartbeat" }); }
+    }, this.config.heartbeatTimeoutMs / 2);
   }
 
   private stopHeartbeat(): void {

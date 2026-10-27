@@ -17,10 +17,10 @@ import {
   AgentCopilotState,
   DriftMessageType,
   DriftReport,
-  DriftWsMessage,
   ReviewLogEntry,
   UmapSnapshot,
 } from "../types";
+import { parseDriftMessage } from "../utils/websocket";
 
 // ══════════════════════════════════════════════════════════════
 // 初始状态
@@ -28,6 +28,7 @@ import {
 
 const INITIAL_STATE: AgentCopilotState = {
   connectionStatus: "disconnected",
+  serverError: null,
   reports: [],
   highlightedSampleIds: new Set<string>(),
   isStreaming: false,
@@ -52,6 +53,9 @@ function copilotReducer(
         isStreaming: action.status === "connected" ? state.isStreaming : false,
       };
 
+    case "SERVER_ERROR":
+      return { ...state, serverError: action.message };
+
     case "REPORT_RECEIVED": {
       if (state.reports.some((r) => r.reportId === action.report.reportId)) {
         return state;
@@ -59,18 +63,14 @@ function copilotReducer(
       return {
         ...state,
         reports: [action.report, ...state.reports].slice(0, 100),
-        // 自动高亮新增的漂移样本
-        highlightedSampleIds: new Set([
-          ...state.highlightedSampleIds,
-          ...action.report.samples.map((s) => s.sampleId),
-        ]),
       };
     }
 
     case "HIGHLIGHT_SAMPLES": {
       const newSet = new Set(state.highlightedSampleIds);
+      const remove = action.sampleIds.every((id) => newSet.has(id));
       for (const id of action.sampleIds) {
-        if (newSet.has(id)) {
+        if (remove) {
           newSet.delete(id);
         } else {
           newSet.add(id);
@@ -173,6 +173,8 @@ export function useDriftStream(
   const heartbeatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectAttempt = useRef(0);
   const disposed = useRef(false);
+  const lastSeq = useRef(0);
+  const awaitingHeartbeat = useRef(false);
 
   // ── 稳定回调引用 ──────────────────────────────────────────
   const dispatchRef = useRef(dispatch);
@@ -206,10 +208,14 @@ export function useDriftStream(
 
   const startHeartbeat = useCallback(() => {
     if (heartbeatTimer.current) clearInterval(heartbeatTimer.current);
+    awaitingHeartbeat.current = false;
     heartbeatTimer.current = setInterval(() => {
-      // 超时未收到服务端心跳 → 断线
-      wsRef.current?.close();
-    }, config.heartbeatTimeoutMs);
+      if (awaitingHeartbeat.current) wsRef.current?.close();
+      else if (wsRef.current?.readyState === WebSocket.OPEN) {
+        awaitingHeartbeat.current = true;
+        wsRef.current.send(JSON.stringify({ type: "heartbeat" }));
+      }
+    }, config.heartbeatTimeoutMs / 2);
   }, [config.heartbeatTimeoutMs]);
 
   const scheduleReconnect = useCallback(() => {
@@ -240,28 +246,23 @@ export function useDriftStream(
 
     ws.onopen = () => {
       reconnectAttempt.current = 0;
+      lastSeq.current = 0;
       dispatchRef.current({ type: "WS_STATUS_CHANGED", status: "connected" });
       startHeartbeat();
     };
 
     ws.onmessage = (event: MessageEvent) => {
-      // 重置心跳
-      if (heartbeatTimer.current) clearInterval(heartbeatTimer.current);
+      const msg = parseDriftMessage(event.data);
+      if (!msg || msg.seq <= lastSeq.current) return;
+      lastSeq.current = msg.seq;
       startHeartbeat();
-
-      let msg: DriftWsMessage;
-      try {
-        msg = JSON.parse(event.data as string) as DriftWsMessage;
-      } catch {
-        return;
-      }
 
       switch (msg.type) {
         case DriftMessageType.DRIFT_REPORT:
           dispatchRef.current({
             type: "REPORT_RECEIVED",
-            payload: msg.payload as DriftReport,
-          } as unknown as AgentCopilotAction);
+            report: msg.payload as DriftReport,
+          });
           break;
 
         case DriftMessageType.DRIFT_EVENT:
@@ -271,12 +272,13 @@ export function useDriftStream(
               report: {
                 reportId: `event-${msg.seq}`,
                 timestamp: new Date().toISOString(),
-                analysisMode: "cpp_bfs",
+                analysisMode: "unknown",
+                timestampKind: "received",
                 samples: msg.payload,
                 stats: {
-                  totalSamples: msg.payload.length,
-                  meanDistance: 0,
-                  threshold: 0,
+                  totalSamples: null,
+                  meanDistance: null,
+                  threshold: null,
                   driftCount: msg.payload.length,
                 },
               },
@@ -300,6 +302,19 @@ export function useDriftStream(
 
         case DriftMessageType.HEARTBEAT:
           dispatchRef.current({ type: "HEARTBEAT_RECEIVED" } as unknown as AgentCopilotAction);
+          break;
+
+        case DriftMessageType.STREAM_START:
+          dispatchRef.current({ type: "SERVER_ERROR", message: null });
+          dispatchRef.current({ type: "SET_STREAMING", active: true });
+          break;
+
+        case DriftMessageType.STREAM_END:
+          dispatchRef.current({ type: "SET_STREAMING", active: false });
+          break;
+
+        case DriftMessageType.ERROR:
+          dispatchRef.current({ type: "SERVER_ERROR", message: (msg.payload as { message: string }).message });
           break;
       }
     };

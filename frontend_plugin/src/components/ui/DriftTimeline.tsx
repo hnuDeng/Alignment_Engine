@@ -28,7 +28,7 @@ export interface TimelineEvent {
   id: string;
   timestamp: number;
   report: DriftReport;
-  severity: DriftSeverity;
+  severity: DriftSeverity | "unknown";
   sampleCount: number;
 }
 
@@ -49,14 +49,16 @@ export interface DriftTimelineProps {
 // Constants
 // ══════════════════════════════════════════════════════════════
 
-const SEVERITY_COLORS: Record<DriftSeverity, string> = {
+const SEVERITY_COLORS: Record<DriftSeverity | "unknown", string> = {
+  unknown: "#64748b",
   critical: "var(--ac-danger)",
   high:     "#ea580c",
   medium:   "var(--ac-warning)",
   low:      "var(--ac-info)",
 };
 
-const SEVERITY_SIZES: Record<DriftSeverity, number> = {
+const SEVERITY_SIZES: Record<DriftSeverity | "unknown", number> = {
+  unknown: 8,
   critical: 14,
   high:     12,
   medium:   10,
@@ -70,11 +72,11 @@ const MAX_ZOOM = 10;
 // Helpers
 // ══════════════════════════════════════════════════════════════
 
-function inferSeverity(report: DriftReport): DriftSeverity {
-  let max = "low" as DriftSeverity;
+function inferSeverity(report: DriftReport): DriftSeverity | "unknown" {
+  let max: DriftSeverity | "unknown" = "unknown";
   const order: Record<string, number> = { low: 1, medium: 2, high: 3, critical: 4 };
   for (const s of report.samples) {
-    if ((order[s.severity] ?? 0) > (order[max] ?? 0)) max = s.severity;
+    if (s.severity && (order[s.severity] ?? 0) > (order[max] ?? 0)) max = s.severity;
   }
   return max;
 }

@@ -99,6 +99,37 @@ npm run build
 
 The frontend build emits JavaScript and type declarations to `frontend_plugin/dist`. Embed the exported `AgentCopilotPanel` in your FiftyOne host; this package does not define a standalone development server.
 
+### Offline WebSocket verification
+
+With Python, NumPy, Pydantic, websockets, pytest, Node.js and the existing frontend `node_modules` already installed, run these commands from the repository root in PowerShell. No installation or download is needed:
+
+```powershell
+Set-Location alignment-engine
+python server.py --offline
+```
+
+This listens on `ws://localhost:8765`, extracts local mock records and uses NumPy without launching FiftyOne or trying CUDA. Stop it with Ctrl+C. In another terminal, run the deterministic cross-language test and the full checks:
+
+```powershell
+Set-Location alignment-engine
+python -m pytest
+Set-Location ../frontend_plugin
+npm test -- --runInBand
+$env:ALIGNMENT_LIVE_PYTHON = "1"
+npm test -- --runInBand tests/hooks/websocketProtocol.test.tsx
+Remove-Item Env:ALIGNMENT_LIVE_PYTHON
+npm run typecheck
+npm run build
+```
+
+The normal Jest suite uses a captured Python wire fixture and does not require Python dependencies in the frontend job. The additional `ALIGNMENT_LIVE_PYTHON=1` run invokes `python` from `PATH`, which must have the existing backend dependencies. It sends deterministic fixture embeddings through the real NumPy analyzer and Python handler, then feeds the serialized messages to the React hook and alert. A separate Python test exercises a loopback WebSocket. The fixture and mock records are synthetic; this does not validate a FiftyOne host, CUDA, model quality, or an external service.
+
+Messages use lowercase `stream_start`, `drift_report`, `stream_end`, `heartbeat`, and `error`, with a per-connection increasing `seq` and a `payload`. The client also accepts uppercase message names. It ignores malformed, duplicate and out-of-order messages. Clients send `{"type":"heartbeat"}`; the server replies with a sequenced heartbeat and reports malformed or unsupported inputs as errors. Reconnection starts a new sequence and a new analysis; replay or incremental synchronization is not provided. The server sends a generic error and an end message if analysis fails.
+
+The report's `centroidDistance` is the analyzer's per-sample Euclidean distance, and `meanDistance` and `threshold` are its aggregate statistics. `totalSamples` counts records in the extracted slice, and the legacy wire field `driftCount` counts selected candidates, not confirmed anomalies. The analyzer fills its minimum selection with the highest-distance samples when fewer exceed the threshold, so selection alone does not prove that every sample crossed it. Both distances and thresholds are rounded in the report; comparisons near equality cannot reliably recover the analyzer's original decision. The panel labels these as candidates, and the normalized store leaves their drift classification and aggregate count unavailable. `isolationScore` and `severity` are `null` because this analyzer does not compute them; the alert displays them as unavailable. `source` identifies mock data, and `mock_numpy` identifies the NumPy path. Mock embeddings use a fixed seed, but generated IDs and timestamps vary between runs.
+
+For legacy `drift_event` messages without report metadata, the panel identifies the timestamp as local receipt time and the analysis mode as unavailable. Server error messages remain visible independently of the connection indicator; a subsequent heartbeat does not erase the error. A new stream clears the previous server error.
+
 ## 🧪 Development & Testing
 
 CI runs backend tests, frontend tests, TypeScript checking, and the frontend build. Coverage must be measured locally; the optional frontend coverage command enforces the thresholds in `frontend_plugin/jest.config.js`.
