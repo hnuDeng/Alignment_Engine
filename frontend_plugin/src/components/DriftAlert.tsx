@@ -65,6 +65,7 @@ const SAMPLE_ROW_STYLE: React.CSSProperties = {
 export const DriftAlert: React.FC<DriftAlertProps> = ({
   report,
   onHighlight,
+  highlightedIds = new Set(),
   expanded,
   onToggleExpand,
 }) => {
@@ -78,16 +79,16 @@ export const DriftAlert: React.FC<DriftAlertProps> = ({
     const order: Record<string, number> = {
       critical: 4, high: 3, medium: 2, low: 1,
     };
-    let maxSev: DriftSeverity = DriftSeverity.LOW;
+    let maxSev: DriftSeverity | null = null;
     for (const s of report.samples) {
-      if ((order[s.severity] ?? 0) > (order[maxSev] ?? 0)) {
+      if (s.severity && (order[s.severity] ?? 0) > (maxSev ? order[maxSev] : 0)) {
         maxSev = s.severity;
       }
     }
     return maxSev;
   }, [report.samples]);
 
-  const sevColor = SEVERITY_COLORS[overallSeverity];
+  const sevColor = overallSeverity ? SEVERITY_COLORS[overallSeverity] : { bg: "#334155", text: "#cbd5e1", label: "不可用" };
 
   const handleHighlight = useCallback(() => {
     onHighlight(sampleIds);
@@ -107,7 +108,7 @@ export const DriftAlert: React.FC<DriftAlertProps> = ({
       {/* ── 标题行 ── */}
       <div style={HEADER_STYLE}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "11px", color: "#64748b" }}>{timeStr}</span>
+          <span style={{ fontSize: "11px", color: "#64748b" }}>{report.timestampKind === "received" ? "接收时间: " : ""}{timeStr}</span>
           <span
             style={{
               padding: "2px 8px",
@@ -121,26 +122,27 @@ export const DriftAlert: React.FC<DriftAlertProps> = ({
             {sevColor.label}
           </span>
           <span style={{ fontSize: "12px", color: "#cbd5e1" }}>
-            {report.samples.length} 个异常样本
+            {report.samples.length} 个待审样本
           </span>
         </div>
         <span style={{ fontSize: "11px", color: "#475569" }}>
-          {report.analysisMode}
+          {report.analysisMode === "unknown" ? "模式不可用" : report.analysisMode}{report.source ? ` · ${report.source}` : ""}
         </span>
       </div>
 
       {/* ── 统计行 ── */}
       <div style={STAT_STYLE}>
-        <span>均值距离: {report.stats.meanDistance.toFixed(4)}</span>
-        <span>阈值: {report.stats.threshold.toFixed(4)}</span>
-        <span>总量: {report.stats.totalSamples}</span>
+        <span>均值距离: {report.stats.meanDistance?.toFixed(4) ?? "不可用"}</span>
+        <span>阈值: {report.stats.threshold?.toFixed(4) ?? "不可用"}</span>
+        <span>总量: {report.stats.totalSamples ?? "不可用"}</span>
       </div>
+      {report.stats.threshold !== null && <div style={{ color: "#94a3b8", marginBottom: "8px" }}>待审样本可能包含阈值以下的补充样本；显示的距离与阈值经过舍入。</div>}
 
       {/* ── 操作栏 ── */}
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
         <HighlightButton
           sampleIds={sampleIds}
-          highlightedIds={new Set()}
+          highlightedIds={highlightedIds}
           onClick={handleHighlight}
           variant={overallSeverity === "critical" ? "danger" : "primary"}
         />
@@ -164,7 +166,7 @@ export const DriftAlert: React.FC<DriftAlertProps> = ({
       {expanded && (
         <div style={{ marginTop: "8px" }}>
           {report.samples.map((sample) => {
-            const sColor = SEVERITY_COLORS[sample.severity];
+            const sColor = sample.severity ? SEVERITY_COLORS[sample.severity] : { bg: "#334155", text: "#cbd5e1" };
             return (
               <div key={sample.sampleId} style={SAMPLE_ROW_STYLE}>
                 <code
@@ -186,13 +188,13 @@ export const DriftAlert: React.FC<DriftAlertProps> = ({
                     fontWeight: 600,
                   }}
                 >
-                  {sample.severity.toUpperCase()}
+                  {sample.severity?.toUpperCase() ?? "不可用"}
                 </span>
                 <span style={{ flex: 1, color: "#94a3b8" }}>
                   {sample.reason}
                 </span>
                 <span style={{ color: "#64748b", whiteSpace: "nowrap" }}>
-                  score={sample.isolationScore.toFixed(2)}
+                  距离={sample.centroidDistance.toFixed(2)}; isolation={sample.isolationScore?.toFixed(2) ?? "不可用"}
                 </span>
               </div>
             );

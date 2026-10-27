@@ -1,0 +1,6 @@
+[
+  "{\"type\":\"stream_start\",\"seq\":1,\"payload\":null}",
+  "{\"type\":\"drift_report\",\"seq\":2,\"payload\":{\"reportId\":\"b808576e-4780-42fe-b3ce-da8d2435859c\",\"timestamp\":\"2026-10-27T00:00:00+00:00\",\"analysisMode\":\"mock_numpy\",\"source\":\"fixture\",\"samples\":[{\"sampleId\":\"far\",\"centroidDistance\":33.941125,\"isolationScore\":null,\"severity\":null,\"reason\":\"样本到质心的欧氏距离 (33.9411) 为最高之一（均值 22.6274），标签为 'fixture'\"},{\"sampleId\":\"near-a\",\"centroidDistance\":22.627417,\"isolationScore\":null,\"severity\":null,\"reason\":\"样本到质心的欧氏距离 (22.6274) 为最高之一（均值 22.6274），标签为 'fixture'\"}],\"stats\":{\"totalSamples\":3,\"meanDistance\":22.627417,\"threshold\":41.102626,\"driftCount\":2}}}",
+  "{\"type\":\"stream_end\",\"seq\":3,\"payload\":null}",
+  "{\"type\":\"heartbeat\",\"seq\":4,\"payload\":null}"
+]

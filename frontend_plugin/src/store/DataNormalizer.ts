@@ -47,7 +47,7 @@ export class DataNormalizer {
         label: "", // will be populated from UMAP data if available
         labelId: 0,
         embedding: null,
-        isDrift: true,
+        isDrift: null,
         isolationScore: s.isolationScore,
         centroidDistance: s.centroidDistance,
         reason: s.reason,
@@ -113,7 +113,7 @@ export class DataNormalizer {
         label: "",
         labelId: 0,
         embedding: null,
-        isDrift: true,
+        isDrift: null,
         isolationScore: s.isolationScore,
         centroidDistance: s.centroidDistance,
         reason: s.reason,
@@ -230,23 +230,27 @@ export class DataNormalizer {
     const samples = Object.values(entities.samples);
     const totalSamples = samples.length;
     const driftSamples = samples.filter((s) => s.isDrift);
-    const driftCount = driftSamples.length;
+    const driftCount = samples.some((s) => s.isDrift === null) ? null : driftSamples.length;
 
     const labelDistribution: Record<number, number> = {};
     let scoreSum = 0;
-    let maxScore = 0;
+    let maxScore: number | null = null;
+    let scoreCount = 0;
 
     for (const s of samples) {
       labelDistribution[s.labelId] = (labelDistribution[s.labelId] ?? 0) + 1;
-      scoreSum += s.isolationScore;
-      if (s.isolationScore > maxScore) maxScore = s.isolationScore;
+      if (s.isolationScore !== null) {
+        scoreSum += s.isolationScore;
+        scoreCount++;
+        if (maxScore === null || s.isolationScore > maxScore) maxScore = s.isolationScore;
+      }
     }
 
     return {
       totalSamples,
       driftCount,
       labelDistribution,
-      meanIsolationScore: totalSamples > 0 ? scoreSum / totalSamples : 0,
+      meanIsolationScore: scoreCount > 0 ? scoreSum / scoreCount : null,
       maxIsolationScore: maxScore,
     };
   }
@@ -300,7 +304,7 @@ export class DataNormalizer {
     severities: string[],
   ): NormalizedSample[] {
     return Object.values(entities.samples).filter(
-      (s) => severities.includes(s.severity),
+      (s) => s.severity !== null && severities.includes(s.severity),
     );
   }
 
@@ -310,7 +314,8 @@ export class DataNormalizer {
     n: number,
   ): NormalizedSample[] {
     return Object.values(entities.samples)
-      .sort((a, b) => b.isolationScore - a.isolationScore)
+      .filter((s) => s.isolationScore !== null)
+      .sort((a, b) => (b.isolationScore ?? 0) - (a.isolationScore ?? 0))
       .slice(0, n);
   }
 

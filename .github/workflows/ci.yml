@@ -34,15 +34,27 @@ jobs:
     steps:
     - uses: actions/checkout@v5
 
-    - name: Use Node.js 18
+    - name: Use Node.js 24
       uses: actions/setup-node@v6
       with:
-        node-version: '18'
+        node-version: '24'
+        cache: npm
+        cache-dependency-path: frontend_plugin/package-lock.json
 
     - name: Install dependencies
       run: |
         cd frontend_plugin
-        npm install
+        npm ci
+
+    - name: Typecheck
+      run: |
+        cd frontend_plugin
+        npm run typecheck
+
+    - name: Build
+      run: |
+        cd frontend_plugin
+        npm run build
 
     - name: Run Jest
       run: |
